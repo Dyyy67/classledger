@@ -2,10 +2,8 @@
 <html>
   <head>
     <script>
-      var path = window.location.pathname.replace('/classledger', '');
-      window.location.replace(
-        'https://dyyy67.github.io/classledger/?redirect=' + encodeURIComponent(path)
-      );
+      var path = window.location.pathname.replace('/classledger', '') + window.location.search;
+      window.location.replace('/classledger/?redirect=' + encodeURIComponent(path));
     </script>
   </head>
 </html>
