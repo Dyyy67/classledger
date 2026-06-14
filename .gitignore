@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment variables (KEEP THIS PRIVATE - contains your Firebase keys)
+.env
+
+# Build output
+dist/
+
+# Vite cache
+.vite/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor folders
+.vscode/
+.idea/
