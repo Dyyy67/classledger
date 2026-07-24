@@ -5,7 +5,8 @@ import {
   deleteTransaction,
 } from '../api/firestore';
 import LogTransactionModal from '../components/LogTransactionModal';
-import { BookOpen, Plus, Download, Trash2, Filter, TrendingUp, TrendingDown, Search } from 'lucide-react';
+import Modal from '../components/Modal';
+import { BookOpen, Plus, Download, Trash2, Filter, TrendingUp, TrendingDown, Search, Copy } from 'lucide-react';
 
 const fmt = (n) =>
   '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
@@ -48,15 +49,60 @@ function DeleteConfirm({ isOpen, onClose, onConfirm }) {
   );
 }
 
+function ReceiptViewModal({ isOpen, onClose, transaction, studentName, campaignTitle, classroomName }) {
+  if (!isOpen || !transaction) return null;
+
+  const receiptText =
+    `📋 *Payment Receipt*\n` +
+    `─────────────\n` +
+    (transaction.type === 'INCOME'
+      ? `Student: ${studentName || 'N/A'}\nAmount Paid: ${fmt(transaction.amount)}\n`
+      : `Expense\nAmount: ${fmt(transaction.amount)}\n`) +
+    (campaignTitle ? `For: ${campaignTitle}\n` : '') +
+    `Date: ${formatDate(transaction.createdAt)}\n` +
+    `Time: ${formatTime(transaction.createdAt)}\n` +
+    (transaction.notes ? `Notes: ${transaction.notes}\n` : '') +
+    `\nClassLedger${classroomName ? ' · ' + classroomName : ''}`;
+
+  const copyReceipt = async () => {
+    try {
+      await navigator.clipboard.writeText(receiptText);
+      alert('Receipt copied to clipboard!');
+    } catch {
+      alert('Could not copy. Please copy the text manually.');
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Transaction Receipt" size="sm">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 font-mono text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+        {receiptText}
+      </div>
+      <div className="flex flex-col gap-2">
+        <button
+          onClick={copyReceipt}
+          className="flex items-center justify-center gap-2 w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-medium text-sm transition-colors"
+        >
+          <Copy size={16} /> Copy Receipt Text
+        </button>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-sm py-1.5 transition-colors">
+          Close
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 export default function Ledger() {
   const { currentClassroom } = useClassroom();
   const [transactions, setTransactions] = useState([]);
   const [students, setStudents] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
-  const [filter, setFilter] = useState('ALL'); // ALL | INCOME | EXPENSE
+  const [filter, setFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [logOpen, setLogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [receiptView, setReceiptView] = useState(null);
   const [exporting, setExporting] = useState(false);
   const ledgerRef = useRef(null);
 
@@ -93,15 +139,27 @@ export default function Ledger() {
     setExporting(true);
     try {
       const html2canvas = (await import('html2canvas')).default;
+
+      const mobileCards = ledgerRef.current.querySelector('.md\\:hidden');
+      const desktopTable = ledgerRef.current.querySelector('.hidden.md\\:block');
+
+      if (mobileCards) mobileCards.style.display = 'none';
+      if (desktopTable) desktopTable.style.display = 'block';
+
       const canvas = await html2canvas(ledgerRef.current, {
         backgroundColor: '#f1f5f9',
         scale: 2,
         useCORS: true,
         logging: false,
+        width: 900,
+        windowWidth: 1200,
       });
+
+      if (mobileCards) mobileCards.style.display = '';
+      if (desktopTable) desktopTable.style.display = '';
+
       const url = canvas.toDataURL('image/png');
 
-      // Try native share first (mobile)
       if (navigator.share && navigator.canShare) {
         const blob = await (await fetch(url)).blob();
         const file = new File([blob], 'classledger-report.png', { type: 'image/png' });
@@ -112,7 +170,6 @@ export default function Ledger() {
         }
       }
 
-      // Fallback: download
       const a = document.createElement('a');
       a.href = url;
       a.download = `classledger-report-${new Date().toISOString().split('T')[0]}.png`;
@@ -210,9 +267,9 @@ export default function Ledger() {
         </div>
       </div>
 
-      {/* Ledger Table — captured by html2canvas */}
+      {/* Ledger Table */}
       <div ref={ledgerRef} className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-        {/* Export header (visible in export, subtle in UI) */}
+        {/* Export header */}
         <div className="px-5 py-3 bg-[#1E3A5F] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BookOpen size={14} className="text-blue-300" />
@@ -256,7 +313,8 @@ export default function Ledger() {
                   {filtered.map((t) => (
                     <tr
                       key={t.id}
-                      className={`hover:bg-slate-50/50 transition-colors group ${
+                      onClick={() => setReceiptView(t)}
+                      className={`hover:bg-slate-50/50 transition-colors group cursor-pointer ${
                         t.type === 'INCOME' ? 'ledger-row-income' : 'ledger-row-expense'
                       }`}
                     >
@@ -290,7 +348,7 @@ export default function Ledger() {
                       </td>
                       <td className="px-3 py-3.5">
                         <button
-                          onClick={() => setDeleteTarget(t)}
+                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(t); }}
                           className="p-1.5 text-transparent group-hover:text-slate-400 hover:!text-red-500 hover:bg-red-50 rounded-lg transition-all"
                         >
                           <Trash2 size={13} />
@@ -307,7 +365,8 @@ export default function Ledger() {
               {filtered.map((t) => (
                 <div
                   key={t.id}
-                  className={`flex items-start gap-3 px-4 py-3.5 ${
+                  onClick={() => setReceiptView(t)}
+                  className={`flex items-start gap-3 px-4 py-3.5 cursor-pointer ${
                     t.type === 'INCOME' ? 'ledger-row-income' : 'ledger-row-expense'
                   }`}
                 >
@@ -334,7 +393,7 @@ export default function Ledger() {
                       </p>
                     </div>
                     <button
-                      onClick={() => setDeleteTarget(t)}
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(t); }}
                       className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mt-0.5"
                     >
                       <Trash2 size={13} />
@@ -367,12 +426,22 @@ export default function Ledger() {
         classroomId={currentClassroom.id}
         students={students}
         campaigns={campaigns}
+        transactions={transactions}
       />
 
       <DeleteConfirm
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteTransaction(deleteTarget.id)}
+      />
+
+      <ReceiptViewModal
+        isOpen={!!receiptView}
+        onClose={() => setReceiptView(null)}
+        transaction={receiptView}
+        studentName={receiptView?.studentId ? getStudentName(receiptView.studentId) : null}
+        campaignTitle={receiptView?.campaignId ? getCampaignTitle(receiptView.campaignId) : null}
+        classroomName={currentClassroom?.className}
       />
     </div>
   );

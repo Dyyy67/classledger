@@ -5,9 +5,21 @@ import {
   addCampaign, updateCampaign, deleteCampaign,
 } from '../api/firestore';
 import Modal from '../components/Modal';
-import { Target, Plus, Pencil, Trash2, Users, CheckCircle2 } from 'lucide-react';
+import { Target, Plus, Pencil, Trash2, Users, CheckCircle2, CheckCircle, Circle, Copy, Share2 } from 'lucide-react';
 
 const fmt = (n) => '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+
+const formatDate = (ts) => {
+  if (!ts) return '—';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const formatTime = (ts) => {
+  if (!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+};
 
 function CampaignModal({ isOpen, onClose, onSave, initial }) {
   const [title, setTitle] = useState('');
@@ -123,6 +135,147 @@ function ProgressBar({ percent }) {
   );
 }
 
+function FundDetailModal({ isOpen, onClose, campaign, students, transactions }) {
+  const [view, setView] = useState('list');
+
+  if (!isOpen || !campaign) return null;
+
+  const fundTx = transactions.filter((t) => t.campaignId === campaign.id && t.type === 'INCOME');
+  const totalGoal = campaign.targetAmountPerStudent * students.length;
+  const collected = fundTx.reduce((s, t) => s + Number(t.amount), 0);
+  const percent = totalGoal > 0 ? (collected / totalGoal) * 100 : 0;
+
+  const paidList = students
+    .map((s) => {
+      const paid = fundTx.filter((t) => t.studentId === s.id).reduce((sum, t) => sum + Number(t.amount), 0);
+      return { student: s, paid, isFull: paid >= campaign.targetAmountPerStudent };
+    })
+    .filter((x) => x.paid > 0)
+    .sort((a, b) => a.student.studentName.localeCompare(b.student.studentName));
+
+  const unpaidList = students
+    .filter((s) => !paidList.find((p) => p.student.id === s.id))
+    .sort((a, b) => a.studentName.localeCompare(b.studentName));
+
+  const history = [...fundTx].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+  const reportText =
+    `📊 *Fund Progress Report*\n` +
+    `─────────────\n` +
+    `Fund: ${campaign.title}\n` +
+    `Target: ${fmt(campaign.targetAmountPerStudent)}/student\n` +
+    `Collected: ${fmt(collected)} / ${fmt(totalGoal)} (${Math.round(percent)}%)\n\n` +
+    `✅ Paid (${paidList.length}/${students.length}):\n` +
+    (paidList.length > 0
+      ? paidList.map((p) => `- ${p.student.studentName} — ${fmt(p.paid)}${p.isFull ? '' : ' (partial)'}`).join('\n')
+      : '(none yet)') +
+    `\n\n❌ Not yet paid (${unpaidList.length}):\n` +
+    (unpaidList.length > 0 ? unpaidList.map((s) => `- ${s.studentName}`).join('\n') : '(everyone has paid!)') +
+    `\n\nUpdated: ${new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}\n— ClassLedger`;
+
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(reportText);
+      alert('Progress report copied! Paste it in your GC.');
+    } catch {
+      alert('Could not copy. Please copy the text manually.');
+    }
+  };
+
+  const handleClose = () => { setView('list'); onClose(); };
+
+  if (view === 'report') {
+    return (
+      <Modal isOpen={isOpen} onClose={handleClose} title="Progress Report" size="sm">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4 font-mono text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+          {reportText}
+        </div>
+        <div className="flex flex-col gap-2">
+          <button onClick={copyReport} className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#1E3A5F] hover:bg-[#264d7e] text-white rounded-xl font-medium text-sm transition-colors">
+            <Copy size={16} /> Copy Report Text
+          </button>
+          <button onClick={() => setView('list')} className="text-slate-400 hover:text-slate-600 text-sm py-1.5 transition-colors">
+            ← Back to fund details
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={handleClose} title={campaign.title} size="md">
+      <div className="mb-5">
+        <div className="flex items-end justify-between mb-2">
+          <p className="text-2xl font-bold text-slate-800">{fmt(collected)}</p>
+          <p className={`text-lg font-bold ${percent >= 100 ? 'text-emerald-600' : 'text-blue-600'}`}>{Math.round(percent)}%</p>
+        </div>
+        <ProgressBar percent={percent} />
+        <p className="text-xs text-slate-400 mt-1.5">
+          of {fmt(totalGoal)} goal · {fmt(campaign.targetAmountPerStudent)}/student
+        </p>
+      </div>
+
+      <button
+        onClick={() => setView('report')}
+        className="flex items-center justify-center gap-2 w-full py-2.5 mb-5 bg-[#1E3A5F] hover:bg-[#264d7e] text-white rounded-xl font-medium text-sm transition-colors"
+      >
+        <Share2 size={15} /> Generate GC Progress Report
+      </button>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+        <div>
+          <p className="text-xs font-semibold text-emerald-600 mb-2 flex items-center gap-1">
+            <CheckCircle size={13} /> Paid ({paidList.length}/{students.length})
+          </p>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+            {paidList.length === 0 && <p className="text-xs text-slate-300">No payments yet.</p>}
+            {paidList.map((p) => (
+              <div key={p.student.id} className="flex items-center justify-between bg-emerald-50 rounded-lg px-2.5 py-1.5">
+                <span className="text-xs text-slate-700 truncate">{p.student.studentName}</span>
+                <span className="text-xs font-semibold text-emerald-600 flex-shrink-0 ml-2">
+                  {fmt(p.paid)}{!p.isFull && ' ⏳'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-red-500 mb-2 flex items-center gap-1">
+            <Circle size={13} /> Not Yet Paid ({unpaidList.length})
+          </p>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+            {unpaidList.length === 0 && <p className="text-xs text-slate-300">Everyone has paid!</p>}
+            {unpaidList.map((s) => (
+              <div key={s.id} className="flex items-center justify-between bg-red-50 rounded-lg px-2.5 py-1.5">
+                <span className="text-xs text-slate-700 truncate">{s.studentName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-slate-500 mb-2">Payment History</p>
+        <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+          {history.length === 0 && <p className="text-xs text-slate-300">No transactions yet for this fund.</p>}
+          {history.map((t) => {
+            const stu = students.find((st) => st.id === t.studentId);
+            return (
+              <div key={t.id} className="flex items-center justify-between border border-slate-100 rounded-lg px-2.5 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-slate-700 truncate">{stu?.studentName || 'Unknown'}</p>
+                  <p className="text-[10px] text-slate-400">{formatDate(t.createdAt)} · {formatTime(t.createdAt)}</p>
+                </div>
+                <span className="text-xs font-bold text-emerald-600 flex-shrink-0 ml-2">{fmt(t.amount)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function Campaigns() {
   const { currentClassroom } = useClassroom();
   const [campaigns, setCampaigns] = useState([]);
@@ -131,6 +284,7 @@ export default function Campaigns() {
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [detailTarget, setDetailTarget] = useState(null);
 
   useEffect(() => {
     if (!currentClassroom) return;
@@ -200,7 +354,11 @@ export default function Campaigns() {
             const isComplete = percent >= 100;
 
             return (
-              <div key={c.id} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div
+                key={c.id}
+                onClick={() => setDetailTarget(c)}
+                className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+              >
                 {/* Title row */}
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -218,10 +376,10 @@ export default function Campaigns() {
                     </div>
                   </div>
                   <div className="flex gap-1 flex-shrink-0 ml-2">
-                    <button onClick={() => setEditTarget(c)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                    <button onClick={(e) => { e.stopPropagation(); setEditTarget(c); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                       <Pencil size={13} />
                     </button>
-                    <button onClick={() => setDeleteTarget(c)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                    <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -276,6 +434,13 @@ export default function Campaigns() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => deleteCampaign(deleteTarget.id)}
         title={deleteTarget?.title}
+      />
+      <FundDetailModal
+        isOpen={!!detailTarget}
+        onClose={() => setDetailTarget(null)}
+        campaign={detailTarget}
+        students={students}
+        transactions={transactions}
       />
     </div>
   );
