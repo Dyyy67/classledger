@@ -19,6 +19,10 @@ export const getUserProfile = async (uid) => {
   return snap.exists() ? snap.data() : null;
 };
 
+export const updateTransaction = async (transactionId, data) => {
+  await updateDoc(doc(db, 'transactions', transactionId), data);
+};
+
 // ─── Classrooms ───────────────────────────────────────────────────────────────
 
 export const createClassroom = async (teacherId, data) => {

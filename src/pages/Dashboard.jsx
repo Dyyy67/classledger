@@ -191,6 +191,7 @@ export default function Dashboard() {
         classroomId={currentClassroom.id}
         students={students}
         campaigns={campaigns}
+        transactions={transactions}
       />
     </div>
   );

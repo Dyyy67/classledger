@@ -11,6 +11,14 @@ import { createUserProfile, getUserProfile } from '../api/firestore';
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
+// Timeout wrapper — if Firestore hangs offline, give up after 3s
+function withTimeout(promise, ms = 3000) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -20,8 +28,12 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        const prof = await getUserProfile(firebaseUser.uid);
-        setProfile(prof);
+        try {
+          const prof = await withTimeout(getUserProfile(firebaseUser.uid));
+          setProfile(prof);
+        } catch {
+          setProfile(null);
+        }
       } else {
         setProfile(null);
       }
@@ -44,7 +56,7 @@ export function AuthProvider({ children }) {
 
   const refreshProfile = async () => {
     if (user) {
-      const prof = await getUserProfile(user.uid);
+      const prof = await withTimeout(getUserProfile(user.uid));
       setProfile(prof);
     }
   };

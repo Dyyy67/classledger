@@ -28,7 +28,7 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/classledger">
       <Routes>
         <Route path="/auth" element={<Auth />} />
         <Route

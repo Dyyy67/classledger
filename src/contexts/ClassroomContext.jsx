@@ -19,8 +19,23 @@ export function ClassroomProvider({ children }) {
       setLoading(false);
       return;
     }
+
     setLoading(true);
+
+    // Safety net: if Firestore doesn't respond in 5s (offline), stop loading
+    const offlineTimer = setTimeout(() => {
+      setLoading(false);
+      // Try to restore last known classroom from localStorage
+      const savedId = localStorage.getItem('cl_currentClassroomId');
+      const savedName = localStorage.getItem('cl_currentClassroomName');
+      const savedYear = localStorage.getItem('cl_currentClassroomYear');
+      if (savedId && savedName) {
+        setCurrentClassroom({ id: savedId, className: savedName, academicYear: savedYear || '' });
+      }
+    }, 5000);
+
     const unsubscribe = subscribeToClassrooms(user.uid, (rooms) => {
+      clearTimeout(offlineTimer); // Firestore responded, cancel the timer
       setClassrooms(rooms);
       if (rooms.length === 0) {
         setShowCreateModal(true);
@@ -29,7 +44,6 @@ export function ClassroomProvider({ children }) {
         const savedId = localStorage.getItem('cl_currentClassroomId');
         const saved = rooms.find((r) => r.id === savedId);
         setCurrentClassroom((prev) => {
-          // keep current selection if still valid
           if (prev && rooms.find((r) => r.id === prev.id)) return prev;
           return saved || rooms[0];
         });
@@ -37,12 +51,18 @@ export function ClassroomProvider({ children }) {
       }
       setLoading(false);
     });
-    return unsubscribe;
+
+    return () => {
+      clearTimeout(offlineTimer);
+      unsubscribe();
+    };
   }, [user]);
 
   const selectClassroom = (classroom) => {
     setCurrentClassroom(classroom);
     localStorage.setItem('cl_currentClassroomId', classroom.id);
+    localStorage.setItem('cl_currentClassroomName', classroom.className);
+    localStorage.setItem('cl_currentClassroomYear', classroom.academicYear);
   };
 
   const handleCreateClassroom = async (data) => {
@@ -50,11 +70,14 @@ export function ClassroomProvider({ children }) {
     setShowCreateModal(false);
     return ref;
   };
-   const handleDeleteClassroom = async (classroomId) => {
+
+  const handleDeleteClassroom = async (classroomId) => {
     await deleteClassroomWithData(classroomId);
     if (currentClassroom?.id === classroomId) {
       setCurrentClassroom(null);
       localStorage.removeItem('cl_currentClassroomId');
+      localStorage.removeItem('cl_currentClassroomName');
+      localStorage.removeItem('cl_currentClassroomYear');
     }
   };
 
